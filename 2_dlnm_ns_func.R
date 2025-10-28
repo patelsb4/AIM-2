@@ -91,13 +91,13 @@ run_dlnm_casecross_ns <- function(data,
   plot(cp_overall, "overall",
        col = 1,
        ylab = "OR",
-       xlab = "Average Temperature (캟)",
+       xlab = "Average Temperature (째F)",
        axes = TRUE,
        lwd = 1.5,
        log = "y",
        main = "Exposure-Response: Extreme Heat and ED Visits", cex.main = 0.8)
   abline(v = perc, col = "red", lty = 2)
-  mtext(paste0("Ref = ", round(cen_temp, 1), "캟"), cex = 0.6)
+  mtext(paste0("Ref = ", round(cen_temp, 1), "째F"), cex = 0.6)
   
   ## Lag-response at 90th percentile
   plot(cp_perc, "slices",
@@ -106,8 +106,8 @@ run_dlnm_casecross_ns <- function(data,
        ylab = "OR",
        xlab = "Lag (days)",
        lwd = 1.5,
-       main = paste0("Lag-Response (", round(perc["99%"], 1), "캟)"), cex.main = 0.8)
-  mtext(paste0("Ref = ", round(cen_temp, 1), "캟"), cex = 0.6)
+       main = paste0("Lag-Response (", round(perc["99%"], 1), "째F)"), cex.main = 0.8)
+  mtext(paste0("Ref = ", round(cen_temp, 1), "째F"), cex = 0.6)
   
   dev.off()
   
