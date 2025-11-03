@@ -1,0 +1,510 @@
+---
+title: "Aim 2 - model fitting for casecrossover dlnm"
+author: "Shreya Patel"
+format: html
+editor: visual
+---
+
+```{r}
+#| echo: false
+#| message: false # Removes messages
+#| warning: false
+
+
+library(kableExtra)
+library(knitr)
+library(lubridate)
+library(dplyr)
+library(tidyverse)
+library(dlnm)
+library(splines)
+library(mvmeta)
+library(survival)
+library(data.table)
+
+setwd("Y:/patels")
+source("Y:/patels/Code/edvisits2.R")
+source('Y:/patels/Code/casecrossv2.R')
+
+
+```
+
+# Case-crossover logistic regression model in a DLMN
+
+-7 day lag, with 2 logknots, model adjusted for holidays
+
+```{r}
+#| echo: false
+#| message: false # Removes messages
+#-----------------------------------------------------------
+# FUNCTION: run_dlnm_casecross
+#-----------------------------------------------------------
+run_dlnm_casecross_ns <- function(data,
+                               temp_var = "temp.mean",
+                               lag_days = 7,
+                               exp_probs,
+                               centering = "median"
+                               ) 
+  {
+  
+  #-------------------------------
+  # Prepare exposure variable
+  #-------------------------------
+  temp <- data[[temp_var]]
+  exp_knots <- quantile(temp, probs = exp_probs, na.rm = TRUE)
+  perc <- quantile(temp, probs = c(0.90, 0.95, 0.975, 0.99), na.rm = TRUE)
+  
+  #-------------------------------
+  # Define crossbasis
+  #-------------------------------
+  cb <- crossbasis(temp,
+                   lag = lag_days,
+                   argvar = list(fun = "ns", 
+                                 knots = exp_knots),
+                   arglag = list(fun = "ns", 
+                                 knots = logknots(lag_days, 2)))
+  
+  #-------------------------------
+  # Fit conditional logistic regression
+  #-------------------------------
+  
+  model <- clogit(case ~ cb + holiday + strata(claim_id), data = data)
+  
+  #-------------------------------
+  # Identify centering value (MMT)
+  #-------------------------------
+  if (centering == "median") {
+    cen_temp <- median(temp, na.rm = TRUE)
+  } else {
+    cen_temp <- centering
+  }
+  
+  #-------------------------------
+  # Predict overall exposure-response and lag effects
+  #-------------------------------
+  cp_overall <- crosspred(cb, model,
+                          cen = cen_temp,
+                          at = seq(min(temp, na.rm = TRUE),
+                                   max(temp, na.rm = TRUE),
+                                   length = 100))
+  
+  cp_perc <- crosspred(cb, model,
+                       cen = cen_temp,
+                       at = perc,
+                       bylag = 0.2)
+  
+
+  #-------------------------------
+  # Plots
+  #-------------------------------
+  par(mfrow = c(1, 2), mar = c(5, 4, 4, 2) + 0.1)
+  
+  ## Exposure-response curve
+  plot(cp_overall, "overall",
+       col = 1,
+       ylab = "OR",
+       xlab = "Average Temperature (°F)",
+       axes = TRUE,
+       lwd = 1.5,
+       log = "y",
+       main = "Exposure-Response: Extreme Heat and ED Visits", cex.main = 0.8)
+  abline(v = perc, col = "red", lty = 2)
+  mtext(paste0("Ref = ", round(cen_temp, 1), "°F"), cex = 0.6)
+  
+  ## Lag-response at 90th percentile
+  plot(cp_perc, "slices",
+       var = as.numeric(perc["99%"]),
+       col = 1,
+       ylab = "OR",
+       xlab = "Lag (days)",
+       lwd = 1.5,
+       main = paste0("Lag-Response (", round(perc["99%"], 1), "°F)"), cex.main = 0.8)
+  mtext(paste0("Ref = ", round(cen_temp, 1), "°F"), cex = 0.6)
+  
+
+  
+  #-------------------------------
+  # Return summary
+  #-------------------------------
+ 
+# Save results as a dataframe
+cumulativeRR <- data.frame(
+  Knots = paste0("(", paste(round(exp_probs, 2), collapse = ", "), ")"),
+  Percentile = names(perc),
+  Temperature = round(as.numeric(perc),2),
+  AIC = AIC(model),
+  RR = round(cp_perc$allRRfit, 2),
+  LowerCI = round(cp_perc$allRRlow, 2),
+  UpperCI = round(cp_perc$allRRhigh, 2)
+)
+
+return(cumulativeRR)
+}
+
+
+```
+
+## Results: All-cause antepartum and postpartum visits
+
+```{r}
+#| message: false # Removes messages
+
+
+
+run_dlnm_casecross_ns(
+  data = pregpp_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.50,0.90))
+
+ run_dlnm_casecross_ns(
+  data = pregpp_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.10,0.75)
+)
+
+run_dlnm_casecross_ns(
+  data = pregpp_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.25,0.75)
+)
+run_dlnm_casecross_ns(
+  data = pregpp_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.33,0.66)
+)
+run_dlnm_casecross_ns(
+  data = pregpp_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.25,0.50,0.75)
+) 
+
+
+
+```
+
+#### Knots at (0.33,0.66) has the lowest AIC
+
+# Results: All-cause pregnancy visits
+
+```{r}
+#| message: false # Removes messages
+
+
+ run_dlnm_casecross_ns(
+  data = preg_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.50,0.90)
+)
+
+run_dlnm_casecross_ns(
+  data = preg_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.10,0.75)
+)
+
+ run_dlnm_casecross_ns(
+  data = preg_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.25,0.75)
+)
+
+
+run_dlnm_casecross_ns(
+  data = preg_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.25,0.50,0.75)
+) 
+
+run_dlnm_casecross_ns(
+  data = preg_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.33,0.66)
+  )
+
+
+```
+
+#### Knots at (0.50,0.90) has the lowest AIC
+
+# Postpartum
+
+```{r}
+#| message: false # Removes messages
+
+
+ run_dlnm_casecross_ns(
+  data = pp_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.50,0.90)
+)
+
+run_dlnm_casecross_ns(
+  data = pp_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.10,0.75)
+)
+
+run_dlnm_casecross_ns(
+  data = pp_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.25,0.75)
+)
+
+
+pp_knots_255075ns <- run_dlnm_casecross_ns(
+  data = pp_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.25,0.50,0.75)
+) 
+
+
+run_dlnm_casecross_ns(
+  data = pp_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.33,0.66)
+)
+
+```
+
+#### Knots at (0.33,0.66) has the lowest AIC
+
+# Pregnancy-related ED visits
+
+```{r}
+#| message: false # Removes messages
+
+run_dlnm_casecross_ns(
+  data = pregrel_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.50,0.90)
+)
+
+run_dlnm_casecross_ns(
+  data = pregrel_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.10,0.75)
+)
+
+ run_dlnm_casecross_ns(
+  data = pregrel_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.25,0.75)
+)
+
+ run_dlnm_casecross_ns(
+  data = pregrel_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.25,0.50,0.75)
+) 
+
+run_dlnm_casecross_ns(
+  data = pregrel_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.33,0.66)
+)
+
+```
+
+#### Knots at (0.50,0.90) has the lowest AIC
+
+# Mental Health related visits
+
+```{r}
+#| message: false
+
+run_dlnm_casecross_ns(
+  data = mental_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.50,0.90)
+)
+
+run_dlnm_casecross_ns(
+  data = mental_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.10,0.75)
+)
+
+run_dlnm_casecross_ns(
+  data = mental_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.25,0.75)
+)
+
+ run_dlnm_casecross_ns(
+  data = mental_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.25,0.50,0.75)
+) 
+
+ run_dlnm_casecross_ns(
+  data = mental_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.33,0.66)
+)
+
+```
+
+#### Knots at (0.50,0.90) has the lowest AIC
+
+# Respiratory causes
+
+```{r}
+#| message: false # Removes messages
+
+
+run_dlnm_casecross_ns(
+  data = resp_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.50,0.90)
+)
+
+
+ run_dlnm_casecross_ns(
+  data = resp_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.10,0.75)
+)
+
+
+run_dlnm_casecross_ns(
+  data = resp_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.25,0.75)
+)
+
+
+run_dlnm_casecross_ns(
+  data = resp_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.25,0.50,0.75)
+) 
+
+run_dlnm_casecross_ns(
+  data = resp_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.33,0.66)
+)
+
+
+```
+
+#### Knots at (0.50,0.90) has the lowest AIC
+
+## Genitourinary causes
+
+```{r}
+#| message: false # Removes messages
+
+run_dlnm_casecross_ns(
+  data = genit_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.50,0.90))
+
+run_dlnm_casecross_ns(
+  data = genit_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.10,0.75)
+)
+
+run_dlnm_casecross_ns(
+  data = genit_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.25,0.75)
+)
+
+run_dlnm_casecross_ns(
+  data = genit_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.25,0.50,0.75)
+) 
+
+run_dlnm_casecross_ns(
+  data = genit_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.33,0.66)
+)
+
+
+```
+
+#### Knots at (0.50,0.90) has the lowest AIC
+
+## injury causes
+
+```{r}
+#| message: false # Removes messages
+
+
+ run_dlnm_casecross_ns(
+  data = injury_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.50,0.90)
+)
+
+ run_dlnm_casecross_ns(
+  data = injury_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.10,0.75)
+)
+
+ run_dlnm_casecross_ns(
+  data = injury_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.25,0.75)
+)
+
+ run_dlnm_casecross_ns(
+  data = injury_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.25,0.50,0.75)
+) 
+
+run_dlnm_casecross_ns(
+  data = injury_cc,
+  temp_var = "temp.mean",
+  lag_days = 7,
+  exp_probs = c(0.33,0.66)
+)
+
+```
+
+#### Knots at (0.50,0.90) has the lowest AIC
