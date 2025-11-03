@@ -34,9 +34,7 @@ casecross <- function(data) {
     )
   }
   
-  #case-control date pairs
-  controldates<-bind_rows(datalist)
-  
+  #case-control date pairs  
   controldates <- bind_rows(datalist) %>%
     # Keep only unique pairs (avoid duplicate case-control combinations)
     distinct() %>%
@@ -86,6 +84,7 @@ infection_cc=casecross(infection)
 digestive_cc=casecross(digestive)
 genit_cc=casecross(genit)
 injury_cc=casecross(injury)
+
 
 
 
