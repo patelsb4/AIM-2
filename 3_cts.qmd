@@ -109,7 +109,7 @@ cp_overall <- crosspred(cb, model,
 cp_perc <- crosspred(cb, model,
                      cen = cen,
                      at = perc,
-                  2)
+                     bylag = 0.2)
 
 
 #png(filename=plot_name, width = 1200, height = 800, res = 150) 
