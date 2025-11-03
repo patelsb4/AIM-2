@@ -3,8 +3,6 @@
 library(lubridate)
 library(weathermetrics)
 library(dplyr)
-library(lubridate)
-library(weathermetrics)
 
 setwd("Y:/patels")
 # function to restrict data on summer months and hourly data
