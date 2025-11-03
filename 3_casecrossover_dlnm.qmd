@@ -464,7 +464,7 @@ run_dlnm_casecross_ns(
 
 #### Knots at (0.50,0.90) has the lowest AIC
 
-## inury causes
+## injury causes
 
 ```{r}
 #| message: false # Removes messages
