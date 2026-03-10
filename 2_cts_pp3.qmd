@@ -1,0 +1,495 @@
+---
+title: "Aim 2 - Case-time series"
+author: "Shreya Patel"
+format: html
+editor: visual
+execute:
+  echo: true
+---
+
+```{r}
+#| echo: false
+#| warning: false
+ #| message: false 
+
+library(lubridate)
+library(tidyverse)
+library(glue)
+library(gt)
+library(gnm) 
+library(dlnm)
+library(splines)
+library(mvmeta)
+library(survival)
+
+
+load("Y:/patels/Data/ed_postpartum.Rdata")
+
+load('Y:/patels/Data/temp1619.Rdata')
+load("Y:/patels/Data/obst.Rdata")
+load("Y:/patels/Data/mental.Rdata")
+load("Y:/patels/Data/injury.Rdata")
+
+load("Y:/patels/Data/obst_live.Rdata")
+load("Y:/patels/Data/mental_live.Rdata")
+load("Y:/patels/Data/injury_live.Rdata")
+
+```
+
+```{r}
+
+#| echo: false
+#| message: false 
+
+get_dailycounts <- function(data, data_temp) {
+
+    data <- data %>%
+    mutate(
+      dateonly = as.Date(claim_date)
+    )
+  
+  # Merge with temperature
+  data_temp <- data_temp %>%
+    left_join(data, by = "dateonly")
+  
+  # daily counts
+  data_counts <- data_temp %>%
+    group_by(dateonly) %>%
+    summarise(
+      case  = sum(case, na.rm = TRUE),
+      tmax  = mean(temp.max,  na.rm = TRUE),
+      tmean = mean(temp.mean, na.rm = TRUE),
+      tmin  = mean(temp.min,  na.rm = TRUE),
+      himean = mean(hi.mean,  na.rm = TRUE),
+      himax  = mean(hi.max,   na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      strata = factor(glue("{year(dateonly)}:{month(dateonly)}:{wday(dateonly)}"))
+    )
+  
+  return(data_counts)
+}
+
+ac_counts=get_dailycounts(ed_postpartum, daily.temp.all) #all cause
+head(ac_counts)
+obst_counts=get_dailycounts(obst, daily.temp.all) #obstetric
+mental_counts=get_dailycounts(mental, daily.temp.all) #mental health
+injury_counts=get_dailycounts(injury, daily.temp.all) #injury
+
+
+ac_counts_live=get_dailycounts(ed_postpartum_live, daily.temp.all) #all cause
+obst_counts_live=get_dailycounts(obst_live, daily.temp.all) #obstetric
+mental_counts_live=get_dailycounts(mental_live, daily.temp.all) #mental health
+injury_counts_live=get_dailycounts(injury_live, daily.temp.all) #injury
+
+# pp only
+ac_counts_pp=get_dailycounts(ed_postpartum_pp, daily.temp.all) #obstetric
+obst_counts_pp=get_dailycounts(obst_pp, daily.temp.all) #obstetric
+
+
+```
+
+```{r}
+#| echo: false
+#| message: false 
+
+
+#function to get qaic
+fqaic <- function(model) {
+  loglik <- sum(dpois(model$y,model$fitted.values,log=TRUE))
+  phi <- summary(model)$dispersion
+  qaic <- -2*loglik + 2*summary(model)$df[3]*phi
+  return(qaic)
+}
+
+# function for dlnms 
+run_cts <- function(data=counts,
+                     temp=counts$tmin,
+                     knots=c(0.50,0.90), plot_temp, main_title, outcome
+) {
+  
+  perc <- quantile(temp,probs=c(0.90,0.95,0.99))
+  exp_knots <- quantile(temp,probs=knots, na.rm = TRUE)
+  
+  #cross basis 
+  cb <- crossbasis(temp,
+                   lag=7,
+                   argvar=list(fun = "ns", 
+                               knots = exp_knots),
+                   arglag = list(fun = "ns", 
+                                 knots = logknots(7, 1)))
+  
+  
+model <- gnm(case ~ cb, eliminate = (strata),  family = quasipoisson, data = data)
+
+
+# reference values
+# median
+cp_median <- crosspred(cb, model,
+                        cen = median(temp),
+                        at = seq(min(temp, na.rm = TRUE),
+                                 max(temp, na.rm = TRUE),
+                                 length = 100))
+
+# mmt
+  mmt <- cp_median$predvar[which.min(cp_median$allRRfit)]
+  
+# predict at both
+  cp_refs <- list(
+    median = crosspred(cb, model, cen = median(temp, na.rm = TRUE), at = perc),
+    mmt    = crosspred(cb, model, cen = mmt,                     at = perc)
+  )
+cp_mmt <- crosspred(cb, model,
+                      cen=mmt,
+                      at=seq(min(temp, na.rm=TRUE),
+                             max(temp, na.rm=TRUE),
+                             length=100))
+
+#predictions at 90-99th pctls
+cp_perc_median <- crosspred(cb, model, cen=median(temp, na.rm = TRUE), at=perc)
+cp_perc_mmt    <- crosspred(cb, model, cen=mmt,at=perc)
+
+#png(filename=plot_name, width = 1200, height = 800, res = 150) 
+  par(mfrow = c(1, 2), mar = c(5, 4, 4, 2) + 0.1, oma = c(0, 0, 3, 0))  # oma[3] = 7
+
+## Exposure-heartonse curve
+  ## Reference=median temp for plots
+
+plot(cp_median, "overall",
+     col = 1,
+     ylab = "RR",
+     xlab = paste0((plot_temp), " (°F)"),
+     axes = TRUE,
+     lwd = 1.5,
+     log = "y",
+     main = "Cumulative Effect Across Lag Days", cex.main = 0.7)
+abline(v = perc, col = "red", lty = 2)
+mtext(paste0("Ref = ", round(median(temp), 1), " °F"), cex = 0.6)
+
+## Lagged effect at 99th percentile
+plot(cp_perc_median, "slices",
+     var = as.numeric(perc["99%"]),
+     col = 1,
+     ylab = "RR",
+     xlab = "Lag (days)",
+     lwd = 1.5,
+     main = paste0("Lagged Effect at ", ( round(perc["99%"], 1)), " °F"), cex.main = 0.7)
+mtext(paste0("Ref = ", round(median(temp), 1), " °F"), cex = 0.6)
+  title(main = main_title, outer = TRUE, cex.main = 1, font.main = 2)
+
+  
+## Exposure-heartonse curve
+## Reference= mmt for plots
+
+# plot(cp_mmt, "overall",
+#      col = 1,
+#      ylab = "RR",
+#      xlab = paste0((plot_temp), " (°F)"),
+#      axes = TRUE,
+#      lwd = 1.5,
+#      log = "y",
+#      main = "Cumulative Effect Across Lag Days", cex.main = 0.7)
+# abline(v = perc, col = "red", lty = 2)
+# mtext(paste0("Ref = ", round(mmt), 1), " °F"), cex = 0.6)
+# 
+# ## Lagged effect at 99th percentile
+# plot(cp_perc_mmt, "slices",
+#      var = as.numeric(perc["99%"]),
+#      col = 1,
+#      ylab = "RR",
+#      xlab = "Lag (days)",
+#      lwd = 1.5,
+#      main = paste0("Lagged Effect at ", ( round(perc["99%"], 1)), " °F"), cex.main = 0.7)
+# mtext(paste0("Ref = ", round(mmt), 1), " °F"), cex = 0.6)
+#   title(main = main_title, outer = TRUE, cex.main = 1, font.main = 2)
+#   
+# 
+
+# Save results as a dataframe
+ cumulativeRR <- bind_rows(
+    lapply(names(cp_refs), function(ref) {
+      cp <- cp_refs[[ref]]
+      data.frame(
+        Outcome      = outcome,
+        TempVar      = plot_temp,
+        Reference    = ref,
+        ReferenceTemp = ifelse(ref == "median",
+                               round(median(temp, na.rm = TRUE), 2),
+                               round(mmt, 2)),
+        Knots        = paste0("(", paste(round(knots, 2), collapse = ", "), ")"),
+        Temperature  = round(as.numeric(perc), 2),
+        Percentile   = names(perc),
+        QAIC         = fqaic(model),
+        RR           = round(cp$allRRfit, 2),
+        LowerCI      = round(cp$allRRlow, 2),
+        UpperCI      = round(cp$allRRhigh, 2)
+      )
+    })
+  )
+
+  return(cumulativeRR)
+}
+
+
+
+```
+
+
+```{r}
+outcome_list <- list(
+  list(label = "All-Cause:Live+SB",            data = ac_counts),
+  list(label = "All-Cause:Live",               data = ac_counts_live),
+  list(label = "Mental Health:Live+SB",        data = mental_counts),
+  list(label = "Mental Health:Live",           data = mental_counts_live),
+  list(label = "Obstetric:Live+SB",            data = obst_counts),
+  list(label = "Obstetric:Live",               data = obst_counts_live),
+  list(label = "Injury:Live+SB",               data = injury_counts),
+  list(label = "Injury:Live",                  data = injury_counts_live)
+)
+
+# temp variables
+temp_list <- list(
+  list(var = "tmin",   label = "Minimum Temperature"),
+  list(var = "tmean",  label = "Average Temperature"),
+  list(var = "tmax",   label = "Maximum Temperature"),
+  list(var = "himean", label = "Average Heat Index")
+)
+
+# loop through all models
+all_results <- list()
+
+for (o in outcome_list) {
+  for (t in temp_list) {
+    result <- run_cts(
+      data       = o$data,
+      temp       = o$data[[t$var]],
+      knots      = c(0.50, 0.90),
+      plot_temp  = t$label,
+      main_title = o$label,
+      outcome    = o$label
+    )
+    all_results[[length(all_results) + 1]] <- result
+  }
+}
+
+# save
+all_results <- bind_rows(all_results)
+write.csv(all_results, file=("Y:/patels/Output/all_results.csv"), row.names = FALSE)
+```
+
+#All cause
+```{r}
+run_cts(data=ac_counts,
+         temp=ac_counts$tmin,
+         knots=c(0.50,0.90),
+         plot_temp='Minimum Temperature',
+         main_title = 'All-Cause')
+
+
+run_cts(data=ac_counts,
+         temp=ac_counts$tmean,
+         knots=c(0.50,0.90),
+        plot_temp = 'Average Temperature',
+        main_title = 'All-Cause')
+
+
+run_cts(data=ac_counts,
+         temp=ac_counts$tmax,
+        plot_temp = 'Maximum Temperature',
+         knots=c(0.50,0.90),main_title = 'All-Cause')
+
+run_cts(data=ac_counts,
+         temp=ac_counts$himean,
+         knots=c(0.50,0.90),
+        plot_temp = 'Average Heat Index',
+        main_title = 'Postpartum')
+
+##live only
+run_cts(data=ac_counts_live,
+         temp=ac_counts$tmin,
+         knots=c(0.50,0.90),
+         plot_temp='Minimum Temperature',
+         main_title = 'All-Cause')
+
+
+run_cts(data=ac_counts_live,
+         temp=ac_counts_live$tmean,
+         knots=c(0.50,0.90),
+        plot_temp = 'Average Temperature',
+        main_title = 'All-Cause')
+
+
+run_cts(data=ac_counts_live,
+         temp=ac_counts_live$tmax,
+        plot_temp = 'Maximum Temperature',
+         knots=c(0.50,0.90),main_title = 'All-Cause')
+
+run_cts(data=ac_counts_live,
+         temp=ac_counts_live$himean,
+         knots=c(0.50,0.90),
+        plot_temp = 'Average Heat Index',
+        main_title = 'Postpartum')
+```
+
+# Mental health 
+
+```{r}
+#| message: false
+#| echo: false
+
+run_cts(data=mental_counts,
+         temp=mental_counts$tmin,
+         knots=c(0.50,0.90),
+        plot_temp = 'Minimum Temperature',
+        main_title = 'Mental Health')
+
+run_cts(data=mental_counts,
+         temp=mental_counts$tmean,
+         plot_temp = 'Average Temperature',
+         knots=c(0.50,0.90),main_title = 'Mental Health')
+
+
+run_cts(data=mental_counts,
+         temp=mental_counts$tmax,
+         plot_temp = 'Maximum Temperature',
+         knots=c(0.50,0.90),main_title = 'Mental Health')
+
+ 
+run_cts(data=mental_counts,
+         temp=mental_counts$himean,
+         knots=c(0.50,0.90),
+        plot_temp = 'Average Heat Index',
+        main_title = 'Mental Health')
+
+##live births only
+run_cts(data=mental_counts_live,
+         temp=mental_counts_live$tmin,
+         knots=c(0.50,0.90),
+        plot_temp = 'Minimum Temperature',
+        main_title = 'Mental Health')
+
+run_cts(data=mental_counts_live,
+         temp=mental_counts_live$tmean,
+         plot_temp = 'Average Temperature',
+         knots=c(0.50,0.90),main_title = 'Mental Health')
+
+
+run_cts(data=mental_counts_live,
+         temp=mental_counts_live$tmax,
+         plot_temp = 'Maximum Temperature',
+         knots=c(0.50,0.90),main_title = 'Mental Health')
+
+ 
+run_cts(data=mental_counts_live,
+         temp=mental_counts_live$himean,
+         knots=c(0.50,0.90),
+        plot_temp = 'Average Heat Index',
+        main_title = 'Mental Health')
+
+
+```
+
+# Obstetric related visits
+
+```{r}
+#| message: false
+#| echo: false
+
+
+run_cts(data=obst_counts,
+         temp=obst_counts$tmin,
+         knots=c(0.50,0.90),
+         plot_temp = 'Minimum Temperature',
+        main_title = 'Obstetric')
+
+run_cts(data=obst_counts,
+         temp=obst_counts$tmean,
+        plot_temp = 'Average Temperature',
+         knots=c(0.50,0.90), main_title = 'Obstetric ')
+
+run_cts(data=obst_counts,
+         temp=obst_counts$tmax,
+         knots=c(0.50,0.90),plot_temp = 'Maximum Temperature', main_title = 'Obstetric')
+
+run_cts(data=obst_counts,
+         temp=obst_counts$himean,
+         knots=c(0.50,0.90),plot_temp = 'Average Heat Index',main_title = 'Obstetric')
+
+##live births only
+
+
+run_cts(data=obst_counts_live,
+         temp=obst_counts_live$tmin,
+         knots=c(0.50,0.90),
+         plot_temp = 'Minimum Temperature',
+        main_title = 'Obstetric')
+
+run_cts(data=obst_counts_live,
+         temp=obst_counts_live$tmean,
+        plot_temp = 'Average Temperature',
+         knots=c(0.50,0.90), main_title = 'Obstetric ')
+
+run_cts(data=obst_counts_live,
+         temp=obst_counts_live$tmax,
+         knots=c(0.50,0.90),plot_temp = 'Maximum Temperature', main_title = 'Obstetric')
+
+run_cts(data=obst_counts_live,
+         temp=obst_counts_live$himean,
+         knots=c(0.50,0.90),plot_temp = 'Average Heat Index',main_title = 'Obstetric')
+
+```
+
+# Injury
+
+```{r}
+#| message: false
+#| echo: false
+
+
+run_cts(data=injury_counts,
+         temp=injury_counts$tmin,
+         knots=c(0.50,0.90), plot_temp = 'Minimum Temperature',main_title = 'Injury') 
+
+
+run_cts(data=injury_counts,
+         temp=injury_counts$tmean,
+         knots=c(0.50,0.90), plot_temp = 'Average Temperature', main_title = 'Injury') 
+
+
+run_cts(data=injury_counts,
+         temp=injury_counts$tmax,
+         knots=c(0.50,0.90), plot_temp = 'Maximum Temperature',main_title = 'Injury') 
+
+
+run_cts(data=injury_counts,
+         temp=injury_counts$himean,
+         knots=c(0.50,0.90),plot_temp = 'Average Heat Index', main_title = 'Injury')
+
+
+
+##live births
+
+run_cts(data=injury_counts_live,
+         temp=injury_counts_live$tmin,
+         knots=c(0.50,0.90), plot_temp = 'Minimum Temperature',main_title = 'Injury') 
+
+
+run_cts(data=injury_counts_live,
+         temp=injury_counts_live$tmean,
+         knots=c(0.50,0.90), plot_temp = 'Average Temperature', main_title = 'Injury') 
+
+
+run_cts(data=injury_counts_live,
+         temp=injury_counts_live$tmax,
+         knots=c(0.50,0.90), plot_temp = 'Maximum Temperature',main_title = 'Injury') 
+
+ 
+run_cts(data=injury_counts_live,
+         temp=injury_counts_live$himean,
+         knots=c(0.50,0.90),plot_temp = 'Average Heat Index', main_title = 'Injury')
+
+
+
+```
+
