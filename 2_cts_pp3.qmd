@@ -159,13 +159,13 @@ cp_perc_mmt    <- crosspred(cb, model, cen=mmt,at=perc)
 plot(cp_median, "overall",
      col = 1,
      ylab = "RR",
-     xlab = paste0((plot_temp), " (캟)"),
+     xlab = paste0((plot_temp), " (째F)"),
      axes = TRUE,
      lwd = 1.5,
      log = "y",
      main = "Cumulative Effect Across Lag Days", cex.main = 0.7)
 abline(v = perc, col = "red", lty = 2)
-mtext(paste0("Ref = ", round(median(temp), 1), " 캟"), cex = 0.6)
+mtext(paste0("Ref = ", round(median(temp), 1), " 째F"), cex = 0.6)
 
 ## Lagged effect at 99th percentile
 plot(cp_perc_median, "slices",
@@ -174,8 +174,8 @@ plot(cp_perc_median, "slices",
      ylab = "RR",
      xlab = "Lag (days)",
      lwd = 1.5,
-     main = paste0("Lagged Effect at ", ( round(perc["99%"], 1)), " 캟"), cex.main = 0.7)
-mtext(paste0("Ref = ", round(median(temp), 1), " 캟"), cex = 0.6)
+     main = paste0("Lagged Effect at ", ( round(perc["99%"], 1)), " 째F"), cex.main = 0.7)
+mtext(paste0("Ref = ", round(median(temp), 1), " 째F"), cex = 0.6)
   title(main = main_title, outer = TRUE, cex.main = 1, font.main = 2)
 
   
@@ -185,13 +185,13 @@ mtext(paste0("Ref = ", round(median(temp), 1), " 캟"), cex = 0.6)
 # plot(cp_mmt, "overall",
 #      col = 1,
 #      ylab = "RR",
-#      xlab = paste0((plot_temp), " (캟)"),
+#      xlab = paste0((plot_temp), " (째F)"),
 #      axes = TRUE,
 #      lwd = 1.5,
 #      log = "y",
 #      main = "Cumulative Effect Across Lag Days", cex.main = 0.7)
 # abline(v = perc, col = "red", lty = 2)
-# mtext(paste0("Ref = ", round(mmt), 1), " 캟"), cex = 0.6)
+# mtext(paste0("Ref = ", round(mmt), 1), " 째F"), cex = 0.6)
 # 
 # ## Lagged effect at 99th percentile
 # plot(cp_perc_mmt, "slices",
@@ -200,8 +200,8 @@ mtext(paste0("Ref = ", round(median(temp), 1), " 캟"), cex = 0.6)
 #      ylab = "RR",
 #      xlab = "Lag (days)",
 #      lwd = 1.5,
-#      main = paste0("Lagged Effect at ", ( round(perc["99%"], 1)), " 캟"), cex.main = 0.7)
-# mtext(paste0("Ref = ", round(mmt), 1), " 캟"), cex = 0.6)
+#      main = paste0("Lagged Effect at ", ( round(perc["99%"], 1)), " 째F"), cex.main = 0.7)
+# mtext(paste0("Ref = ", round(mmt), 1), " 째F"), cex = 0.6)
 #   title(main = main_title, outer = TRUE, cex.main = 1, font.main = 2)
 #   
 # 
@@ -240,6 +240,7 @@ mtext(paste0("Ref = ", round(median(temp), 1), " 캟"), cex = 0.6)
 outcome_list <- list(
   list(label = "All-Cause:Live+SB",            data = ac_counts),
   list(label = "All-Cause:Live",               data = ac_counts_live),
+  list(label = "All-Cause:PP only",            data = ac_counts_pp),
   list(label = "Mental Health:Live+SB",        data = mental_counts),
   list(label = "Mental Health:Live",           data = mental_counts_live),
   list(label = "Obstetric:Live+SB",            data = obst_counts),
@@ -492,4 +493,5 @@ run_cts(data=injury_counts_live,
 
 
 ```
+
 
