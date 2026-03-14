@@ -84,8 +84,10 @@ mental_counts_live=get_dailycounts(mental_live, daily.temp.all) #mental health
 injury_counts_live=get_dailycounts(injury_live, daily.temp.all) #injury
 
 # pp only
-ac_counts_pp=get_dailycounts(ed_postpartum_pp, daily.temp.all) #obstetric
+ac_counts_pp=get_dailycounts(ed_postpartum_pp, daily.temp.all) #all cause
 obst_counts_pp=get_dailycounts(obst_pp, daily.temp.all) #obstetric
+mental_counts_pp=get_dailycounts(mental_pp, daily.temp.all) #mental health
+injury_counts_pp=get_dailycounts(injury_pp, daily.temp.all) #injury
 
 
 ```
@@ -243,11 +245,16 @@ outcome_list <- list(
   list(label = "All-Cause:PP only",            data = ac_counts_pp),
   list(label = "Mental Health:Live+SB",        data = mental_counts),
   list(label = "Mental Health:Live",           data = mental_counts_live),
+  list(label = "Mental Health:PP only",        data = mental_counts_pp),
   list(label = "Obstetric:Live+SB",            data = obst_counts),
   list(label = "Obstetric:Live",               data = obst_counts_live),
+  list(label = "Obstetric:PP only",            data = obst_counts_pp),
   list(label = "Injury:Live+SB",               data = injury_counts),
-  list(label = "Injury:Live",                  data = injury_counts_live)
+  list(label = "Injury:Live",                  data = injury_counts_live),
+  list(label = "Injury:PP only",                  data = injury_counts_pp)
+
 )
+
 
 # temp variables
 temp_list <- list(
