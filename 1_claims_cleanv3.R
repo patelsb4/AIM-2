@@ -111,8 +111,14 @@ ed_post_all <- ed_post_all %>%
 
   #remove non injury y codes
 ed_post_all <- ed_post_all %>%
-  mutate(injury_all =ifelse((ch1 == "Y" & num1 >= 37 & num1 <= 49) |
-                            (ch2 == "Y" & num2 >= 37 & num2 <= 49), 0, injury_all))
+  mutate(injury =ifelse((ch1 == "Y" & num1 >= 39)  |
+                            (ch2 == "Y" & num2 >=39), 0, injury))
+
+ed_post_all <- ed_post_all %>%
+  mutate(injury = ifelse(
+    (substr(DGNS_CD_1, 1, 4) %in% excluded_t_prefixes & substr(DGNS_CD_1, 5, 5) %in% c("1","2","3","4")) |
+      (substr(DGNS_CD_2, 1, 4) %in% excluded_t_prefixes & substr(DGNS_CD_2, 5, 5) %in% c("1","2","3","4")),
+    0, injury))
 
 extractcause <- function(data, var) {
   data %>%
@@ -156,7 +162,10 @@ ed_postpartum_pp= ed_postpartum  %>%
   filter(pregnant==0)
 obst_pp= obst  %>%
   filter(pregnant==0)
-
+mental_pp= mental  %>%
+  filter(pregnant==0)
+injury_pp= injury  %>%
+  filter(pregnant==0)
 
 save(ed_postpartum,      file = 'Data/ed_postpartum.Rdata')
 save(ed_post_all,        file = 'Data/ed_post_all.Rdata')
@@ -176,19 +185,20 @@ save(injury_live,        file = 'Data/injury_live.Rdata')
 #total number of unqiue ids
 ed_postpartum%>%
   distinct(id, .keep_all = TRUE)
-##n=11,974 unqiue participants, from 22,507 unique ed visit days
+##n=11,821 unqiue participants, from 22,507 unique ed visit days
 
 length(mental$case) #1,119
 length(mental$case)/ length(allvisits$case) # 3.3%
 
-length(obst$case) #1,119
+length(obst$case) #4,296
 length(obst$case)/ length(allvisits$case) # 12.7%
 
-length(injury$case) #1,119
-length(injury$case)/ length(allvisits$case) # 10.6%
+length(injury$case) #3,477
+length(injury$case)/ length(allvisits$case) # 10.3%
 
 load('Y:/patels/Data/temp1619.Rdata')
 median(daily.temp.all$temp.mean) #75.0
+summary(daily.temp.all$temp.mean)
 
 
 # 90th, 95th, 99th percentiles of temperature
@@ -234,4 +244,3 @@ heatcounts(ed_postpartum)
 heatcounts(mental)
 heatcounts(obst)
 heatcounts(injury)
-
