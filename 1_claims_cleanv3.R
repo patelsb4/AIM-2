@@ -114,18 +114,11 @@ ed_post_all <- ed_post_all %>%
   mutate(injury =ifelse((ch1 == "Y" & num1 >= 39)  |
                             (ch2 == "Y" & num2 >=39), 0, injury))
 
-ed_post_all <- ed_post_all %>%
-  mutate(injury = ifelse(
-    (substr(DGNS_CD_1, 1, 4) %in% excluded_t_prefixes & substr(DGNS_CD_1, 5, 5) %in% c("1","2","3","4")) |
-      (substr(DGNS_CD_2, 1, 4) %in% excluded_t_prefixes & substr(DGNS_CD_2, 5, 5) %in% c("1","2","3","4")),
-    0, injury))
-
 extractcause <- function(data, var) {
   data %>%
     filter({{ var }} == 1) %>%
     distinct(id, claim_date, .keep_all = TRUE)
 }
-
 
 infection <- extractcause(ed_post_all, infection)
 blood     <- extractcause(ed_post_all, blood)
@@ -155,7 +148,6 @@ obst_live          <- extractcause(obst,   preg_live)
 injury_live        <- extractcause(injury, preg_live)
 
 
-
 # exclude concurrent pregnancy and postpartum period
 
 ed_postpartum_pp= ed_postpartum  %>%
@@ -179,68 +171,91 @@ save(injury_live,        file = 'Data/injury_live.Rdata')
 #######################
 #######################
 #######################
+#######################
+
 #Table1
 
 
-#total number of unqiue ids
-ed_postpartum%>%
-  distinct(id, .keep_all = TRUE)
-##n=11,821 unqiue participants, from 22,507 unique ed visit days
+# vist level summary
+n_total <- length(allvisits$case)
 
-length(mental$case) #1,119
-length(mental$case)/ length(allvisits$case) # 3.3%
+visit_summary <- tibble(
+  Category          = c("All ED visits", "Mental health", "Obstetric", "Injury"),
+  N_visits          = c(n_total,
+                        length(mental$case),
+                        length(obst$case),
+                        length(injury$case)),
+  Pct_of_all        = c(n_total/ n_total,
+                        length(mental$case) / n_total,
+                        length(obst$case)   / n_total,
+                        length(injury$case) / n_total)
+) %>%
+  mutate(Pct_of_all = scales::percent(Pct_of_all, accuracy = 0.1))
 
-length(obst$case) #4,296
-length(obst$case)/ length(allvisits$case) # 12.7%
+# Unique participants (reported inline; add to table if desired)
+n_unique_ids <- ed_postpartum %>% distinct(id) %>% nrow()  # 11,821
 
-length(injury$case) #3,477
-length(injury$case)/ length(allvisits$case) # 10.3%
+print(visit_summary)
 
-load('Y:/patels/Data/temp1619.Rdata')
-median(daily.temp.all$temp.mean) #75.0
-summary(daily.temp.all$temp.mean)
+# temp thresholds
+probs <- c(0.90, 0.95, 0.99)
 
+temp_thresholds <- tibble(
+  Percentile = c("90th", "95th", "99th"),
+  T_min      = quantile(daily.temp.all$temp.min,  probs, na.rm = TRUE),
+  T_mean     = quantile(daily.temp.all$temp.mean, probs, na.rm = TRUE),
+  T_max      = quantile(daily.temp.all$temp.max,  probs, na.rm = TRUE)
+)
 
-# 90th, 95th, 99th percentiles of temperature
-tmin_pctiles <- quantile(daily.temp.all$temp.min, probs = c(0.90, 0.95, 0.99), na.rm = TRUE)
-tmean_pctiles <- quantile(daily.temp.all$temp.mean, probs = c(0.90, 0.95, 0.99), na.rm = TRUE)
-tmax_pctiles <- quantile(daily.temp.all$temp.max, probs = c(0.90, 0.95, 0.99), na.rm = TRUE)
+tmin_pctiles  <- setNames(temp_thresholds$T_min,  c("p90","p95","p99"))
+tmean_pctiles <- setNames(temp_thresholds$T_mean, c("p90","p95","p99"))
+tmax_pctiles  <- setNames(temp_thresholds$T_max,  c("p90","p95","p99"))
 
+print(temp_thresholds)
 
-heatcounts <- function(data) {
+# counts of events at extreme heat
+heatcounts <- function(data, label) {
   data$dateonly <- data$claim_date
   
-  data_temp <- daily.temp.all %>%
+  daily.temp.all %>%
     left_join(data, by = "dateonly") %>%
     mutate(
-      tmin_90  = as.integer(temp.min  >= tmin_pctiles[1]),
-      tmin_95  = as.integer(temp.min  >= tmin_pctiles[2]),
-      tmin_99  = as.integer(temp.min  >= tmin_pctiles[3]),
-      tmean_90 = as.integer(temp.mean >= tmean_pctiles[1]),
-      tmean_95 = as.integer(temp.mean >= tmean_pctiles[2]),
-      tmean_99 = as.integer(temp.mean >= tmean_pctiles[3]),
-      tmax_90  = as.integer(temp.max  >= tmax_pctiles[1]),
-      tmax_95  = as.integer(temp.max  >= tmax_pctiles[2]),
-      tmax_99  = as.integer(temp.max  >= tmax_pctiles[3])
-    )
-  
-  data_temp %>%
-    group_by(case) %>%        # replace ID with your actual identifier
-    summarise(
-      n_min90  = sum(tmin_90,  na.rm = TRUE),
-      n_min95  = sum(tmin_95,  na.rm = TRUE),
-      n_min99  = sum(tmin_99,  na.rm = TRUE),
-      n_mean90 = sum(tmean_90, na.rm = TRUE),
-      n_mean95 = sum(tmean_95, na.rm = TRUE),
-      n_mean99 = sum(tmean_99, na.rm = TRUE),
-      n_max90  = sum(tmax_90,  na.rm = TRUE),
-      n_max95  = sum(tmax_95,  na.rm = TRUE),
-      n_max99  = sum(tmax_99,  na.rm = TRUE),
-      .groups  = "drop"
-    )
+      tmin_90  = temp.min  >= tmin_pctiles["p90"],
+      tmin_95  = temp.min  >= tmin_pctiles["p95"],
+      tmin_99  = temp.min  >= tmin_pctiles["p99"],
+      tmean_90 = temp.mean >= tmean_pctiles["p90"],
+      tmean_95 = temp.mean >= tmean_pctiles["p95"],
+      tmean_99 = temp.mean >= tmean_pctiles["p99"],
+      tmax_90  = temp.max  >= tmax_pctiles["p90"],
+      tmax_95  = temp.max  >= tmax_pctiles["p95"],
+      tmax_99  = temp.max  >= tmax_pctiles["p99"]
+    ) %>%
+    group_by(case) %>%
+    summarise(across(tmin_90:tmax_99, ~ sum(.x, na.rm = TRUE)),
+              .groups = "drop") %>%
+    pivot_longer(-case,
+                 names_to  = c("metric", "pctile"),
+                 names_pattern = "(t\\w+)_(\\d+)") %>%
+    pivot_wider(names_from = metric, values_from = value) %>%
+    mutate(category  = label,
+           pctile    = paste0(pctile, "th"),
+           .before   = 1)
 }
 
-heatcounts(ed_postpartum)
-heatcounts(mental)
-heatcounts(obst)
-heatcounts(injury)
+heat_table <- bind_rows(
+  heatcounts(ed_postpartum, "All ED visits"),
+  heatcounts(mental,        "Mental health"),
+  heatcounts(obst,          "Obstetric"),
+  heatcounts(injury,        "Injury")
+) %>%
+  arrange(category, case, pctile) %>%
+  rename(
+    Category   = category,
+    Case       = case,
+    Percentile = pctile,
+    T_min      = tmin,
+    T_mean     = tmean,
+    T_max      = tmax
+  )
+
+print(heat_table)
